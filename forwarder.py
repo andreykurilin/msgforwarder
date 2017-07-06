@@ -48,30 +48,31 @@ An example of configuration of rallydev-bot for https://github.com/xRally team:
         "Gitter": {
             "server": "irc.gitter.im",
             "port": 6697,
-            "use_ssl": True
+            "use_ssl": true,
             "nickname": "rallydev-bot",
             "password": "hahaha. I'll not share our real password :)",
             "ident": "Mr.Gitter~",
             "realname": "https://gitter.im/xRally/Lobby",
-            "channels": ["#xRally/Lobby", "#xRally/statuses"]},
-     "rules": [
+            "channels": ["#xRally/Lobby", "#xRally/statuses"]}},
+        "rules": [
         {
             "from": "#openstack-rally@IRC", 
-            "send_to": "#xRally/Lobby"@Gitter",
+            "send_to": "#xRally/Lobby@Gitter",
             "ignore_nicknames": ["openstackgerrit"],
             "msg_template": "*[From %(client_id)s]* **%(author)s** : %(msg)s"
         },
         {
             "from": "#openstack-rally@IRC", 
             "send_to": "#xRally/statuses@Gitter",
-            "nickname": "openstackgerrit",
+            "nicknames": ["openstackgerrit"],
             "msg_template": "*[From %(client_id)s]* **%(author)s** : %(msg)s"
         },
         {
-            "from": "#xRally/Lobby"@Gitter", 
+            "from": "#xRally/Lobby@Gitter",
             "send_to": "#openstack-rally@IRC"
-        }]}
+        }]
     }
+
     
     NOTES:
         
@@ -264,8 +265,8 @@ class Forwarder(object):
             try:
                 jsonschema.validate(rule, RULE_SCHEMA)
             except jsonschema.ValidationError:
-                LOG.exception("The following rule is invalid.")
-                return
+                print("The following rule is invalid.")
+                raise
 
             from_channel, from_client_id = rule["from"].split("@", 1)
             to_channel, to_client_id = rule["send_to"].split("@", 1)
