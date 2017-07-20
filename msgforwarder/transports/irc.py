@@ -1,9 +1,13 @@
 
+import asyncio
 from asyncirc import irc
 import blinker
 
 from msgforwarder import logger
 from msgforwarder.transports import transport
+
+
+loop = asyncio.get_event_loop()
 
 
 class IRCClient(transport.BaseTransport):
@@ -73,7 +77,7 @@ class IRCClient(transport.BaseTransport):
         # before forwarding it
         blinker.signal("message").connect(self.on_message)
 
-    def _say(self, channel, msg):
+    async def _say(self, channel, msg):
         self._irc.say(channel, msg)
 
     def on_message(self, message, user, target, text):

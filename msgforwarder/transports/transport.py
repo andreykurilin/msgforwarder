@@ -1,4 +1,5 @@
 
+import asyncio
 import blinker
 import jsonschema
 
@@ -36,7 +37,7 @@ class BaseTransport(object):
         }
         logger.debug("Forwarding message `%s` to %s@%s" % (
             msg, target, self._client_id))
-        self._say(target, msg)
+        asyncio.get_event_loop().create_task(self._say(target, msg))
 
     def _say(self, channel, msg):
         raise NotImplementedError
