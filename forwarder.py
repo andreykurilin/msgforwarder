@@ -91,7 +91,6 @@ An example of configuration of rallydev-bot for https://github.com/xRally team:
 import asyncio
 import json
 import jsonschema
-import logging
 import os
 import re
 import sys
@@ -101,7 +100,7 @@ from asyncirc import irc
 import blinker
 import yaml
 
-LOG = None
+from msgforwarder import logger
 
 
 CLIENT_SCHEMA = {
@@ -186,8 +185,8 @@ class IRCClient(object):
         self._irc = None
 
     def connect(self):
-        LOG.info("Connecting %s to channel(s): %s..." %
-                 (self._client_id, ", ".join(self._client_cfg["channels"])))
+        logger.info("Connecting %s to channel(s): %s..." %
+                    (self._client_id, ", ".join(self._client_cfg["channels"])))
         self._irc = irc.connect(self._client_cfg["server"],
                                 port=self._client_cfg["port"],
                                 use_ssl=self._client_cfg.get("use_ssl", False))
@@ -198,7 +197,7 @@ class IRCClient(object):
         self._irc.join(self._client_cfg["channels"])
 
     def say(self, channel, msg):
-        LOG.debug("Forwarding message `%s` to %s@%s" % (
+        logger.debug("Forwarding message `%s` to %s@%s" % (
             msg, channel, self._client_cfg["server"]))
         self._irc.say(channel, msg)
 
@@ -223,7 +222,7 @@ class Forwarder(object):
         if user.nick == message.client.nick:
             # ignore messages from connected clients
             return
-        LOG.info("Received message at %s from %s:\n%s" % (
+        logger.info("Received message at %s from %s:\n%s" % (
             author_id, user.nick, textwrap.indent(text, "\t")))
         for rule in self._rules:
             from_channel, from_client_id = rule["from"].split("@", 1)
@@ -256,7 +255,7 @@ class Forwarder(object):
             try:
                 jsonschema.validate(clients[client_id], CLIENT_SCHEMA)
             except jsonschema.ValidationError:
-                LOG.exception(
+                logger.exception(
                     "The credentials of %s user is invalid." % client_id)
                 return
 
@@ -274,7 +273,7 @@ class Forwarder(object):
                 from_client_id if from_client_id not in clients else (
                     to_client_id if to_client_id not in clients else None))
             if missed_user:
-                LOG.warning(
+                logger.warning(
                     "The user '%s' is specified in the rule, but was not "
                     "initialized. This rule will be ignored." %
                     missed_user)
@@ -339,23 +338,7 @@ def run():
     clients, rules = resp
 
     # ok, everything looks valid
-    global LOG
-    logging_cfg = config.get("logging", {})
-    LOG = logging.getLogger(logging_cfg.get("title", "forwarder"))
-    LOG.setLevel(logging_cfg.get("level", logging.INFO))
-
-    formatter = logging.Formatter("%(asctime)s %(levelname)s | %(message)s",
-                                  "%Y-%m-%d %H:%M:%S")
-    for handler, cfg in logging_cfg.get("handlers", {"stdout": None}).items():
-        handler_cls = None
-        if handler == "stdout":
-            handler_cls = logging.StreamHandler(sys.stdout)
-        elif handler == "file":
-            handler_cls = logging.FileHandler(cfg)
-
-        if handler_cls:
-            handler_cls.setFormatter(formatter)
-            LOG.addHandler(handler_cls)
+    logger.setup(config.get("logging", {}))
 
     # start forwarder
     Forwarder(clients, rules).start()
