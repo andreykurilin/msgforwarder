@@ -92,56 +92,33 @@ import asyncio
 import json
 import jsonschema
 import os
+import pkgutil
 import re
 import sys
 import textwrap
 
-from asyncirc import irc
 import blinker
 import yaml
 
 from msgforwarder import logger
+from msgforwarder import transports
+from msgforwarder.transports import transport
 
 
-CLIENT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "server": {
-            "type": "string",
-            "description": "The server to connect."
-        },
-        "port": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 65535,
-            "description": "The server port to connect."
-        },
-        "use_ssl": {
-            "type": "boolean",
-            "description": "Use SSL for connection or not. Defaults to False"
-        },
-        "nickname": {
-            "type": "string",
-            "description": "Nickname of a user."
-        },
-        "password": {
-            "type": "string",
-            "description": "Password of user to connect."
-        },
-        "ident": {
-            "type": "string"
-        },
-        "realname": {
-            "type": "string"
-        },
-        "channels": {"type": "array",
-                     "items": {"type": "string",
-                               "minItem": 1},
-                     "description": "The list of channels to connect"}
-    },
-    "additionalProperties": False,
-    "required": ["server", "port", "nickname"]
-}
+_transports = {}
+_is_loaded = False
+
+
+def load_plugins():
+    global _is_loaded
+    if not _is_loaded:
+        for importer, modname, _ in pkgutil.iter_modules(transports.__path__):
+            # load all submodules
+            importer.find_module(modname).load_module(modname)
+        for t in transport.BaseTransport.__subclasses__():
+            _transports[t.NAME] = t
+        _is_loaded = True
+
 
 RULE_SCHEMA = {
     "type": "object",
@@ -178,82 +155,58 @@ RULE_SCHEMA = {
 }
 
 
-class IRCClient(object):
-    def __init__(self, client_id, client_cfg):
-        self._client_id = client_id
-        self._client_cfg = client_cfg
-        self._irc = None
-
-    def connect(self):
-        logger.info("Connecting %s to channel(s): %s..." %
-                    (self._client_id, ", ".join(self._client_cfg["channels"])))
-        self._irc = irc.connect(self._client_cfg["server"],
-                                port=self._client_cfg["port"],
-                                use_ssl=self._client_cfg.get("use_ssl", False))
-        self._irc.register(self._client_cfg["nickname"],
-                           user=self._client_cfg.get("ident", ""),
-                           realname=self._client_cfg.get("realname", ""),
-                           password=self._client_cfg.get("password", None))
-        self._irc.join(self._client_cfg["channels"])
-
-    def say(self, channel, msg):
-        logger.debug("Forwarding message `%s` to %s@%s" % (
-            msg, channel, self._client_cfg["server"]))
-        self._irc.say(channel, msg)
-
-
 class Forwarder(object):
-
-    DEFAULT_MSG_TEMPLATE = "[From %(client_id)s] %(author)s : %(msg)s"
 
     def __init__(self, clients, rules):
         self._rules = rules
         self._clients = clients
         for client in self._clients:
-            self._clients[client]["client"] = IRCClient(client,
-                                                        clients[client])
-        blinker.signal("message").connect(self.on_message)
+            t = _transports[clients[client]["transport"]]
+            self._clients[client]["client"] = t(client, clients[client])
+        blinker.signal("messages").connect(self.on_message)
 
-    def on_message(self, message, user, target, text):
-        server_info = message.client.server_info
-        author_id = "%s@%s:%s" % (message.client.nick,
-                                  server_info["host"],
-                                  server_info["port"])
-        if user.nick == message.client.nick:
-            # ignore messages from connected clients
-            return
-        logger.info("Received message at %s from %s:\n%s" % (
-            author_id, user.nick, textwrap.indent(text, "\t")))
+    def on_message(self, sender, user, target, text):
+        logger.info("Received message at %(target)s:%(client)s from %(user)s:"
+                    "\n%(msg)s" % {"client": sender,
+                                   "target": target,
+                                   "user": user,
+                                   "msg": textwrap.indent(text, "\t")})
         for rule in self._rules:
             from_channel, from_client_id = rule["from"].split("@", 1)
             # check that rule fit the message
-            if (self._clients[from_client_id]["server"] != server_info["host"]
-                    or from_channel != target):
+            if from_client_id != sender or from_channel != target:
                 continue
-            if "nicknames" in rule and user.nick not in rule["nicknames"]:
+            if "nicknames" in rule and user not in rule["nicknames"]:
                 continue
-            if user.nick in rule.get("ignore_nicknames", []):
+            if user in rule.get("ignore_nicknames", []):
                 continue
             if "regexp" in rule and not re.match(text, rule["regexp"]):
                 continue
 
             # ok, the message ok, let's forward it
             to_channel, to_client_id = rule["send_to"].split("@", 1)
-            msg_template = rule.get("msg_template", self.DEFAULT_MSG_TEMPLATE)
             self._clients[to_client_id]["client"].say(
-                to_channel,
-                msg_template % {
-                    "client_id": from_client_id,
-                    "author": user.nick,
-                    "msg": text
-                }
+                author=user,
+                from_client=from_client_id,
+                from_target=target,
+                target=to_channel,
+                msg=text
             )
 
     @classmethod
     def validate(cls, clients, rules):
-        for client_id in clients:
+        for client_id, cfg in clients.items():
+            if "transport" not in cfg:
+                logger.error("The 'transport' section is missed in %s client."
+                             % client_id)
+                return
+            elif cfg["transport"] not in _transports:
+                logger.error("The '%s' transport is unknown." %
+                             cfg["transport"])
+                return
+            t = _transports[cfg["transport"]]
             try:
-                jsonschema.validate(clients[client_id], CLIENT_SCHEMA)
+                t.validate(cfg)
             except jsonschema.ValidationError:
                 logger.exception(
                     "The credentials of %s user is invalid." % client_id)
@@ -288,11 +241,15 @@ class Forwarder(object):
 
 
 def run():
+    load_plugins()
+
     args = sys.argv[1:]
     if "--help" in args or "-h" in args or "help" in args:
         if "clients" in args or "client" in args:
-            print("The jsonschema for values of clients section: \n")
-            print(json.dumps(CLIENT_SCHEMA, indent=4))
+            print("There are several available transports.")
+            for t in _transports:
+                print("The jsonschema for values of clients section: \n")
+                print(json.dumps(t.CLIENT_SCHEMA, indent=4))
         elif "rules" in args or "rule" in args:
             print("The jsonschema for items of rules section: \n")
             print(json.dumps(RULE_SCHEMA, indent=4))
@@ -332,15 +289,14 @@ def run():
               "Call `%s --help` to print help message." % __file__)
         sys.exit(1)
 
+    logger.setup(config.get("logging", {}))
+
     resp = Forwarder.validate(config["clients"], config["rules"])
     if resp is None:
         sys.exit(1)
     clients, rules = resp
 
-    # ok, everything looks valid
-    logger.setup(config.get("logging", {}))
-
-    # start forwarder
+    # ok, everything looks valid. start forwarding
     Forwarder(clients, rules).start()
 
 if __name__ == "__main__":

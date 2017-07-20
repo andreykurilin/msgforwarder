@@ -38,3 +38,7 @@ def debug(msg):
 
 def exception(msg):
     LOG.exception(msg)
+
+
+def error(msg):
+    LOG.error(msg)
