@@ -64,8 +64,8 @@ class TelegramClient(transport.BaseTransport):
 
     async def _listen_for_update(self):
         offset = None
-        async with aiohttp.ClientSession(loop=loop) as session:
-            while True:
+        while True:
+            async with aiohttp.ClientSession(loop=loop) as session:
                 params = None
                 if offset:
                     params = {"offset": offset}
