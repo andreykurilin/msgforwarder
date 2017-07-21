@@ -24,6 +24,12 @@ class TelegramClient(transport.BaseTransport):
                          "patternProperties": {
                              "^.*$": {"type": "string"}
                          }
+            },
+            "msg_template": {
+                "type": "string",
+                "description": "Format message before forwarding. The "
+                               "following keys can be used: client_id, "
+                               "author, msg."
             }
         },
         "additionalProperties": False,

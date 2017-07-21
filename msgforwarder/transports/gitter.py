@@ -26,7 +26,13 @@ class GitterClient(transport.BaseTransport):
             "channels": {"type": "array",
                          "items": {"type": "string",
                                    "minItem": 1},
-                         "description": "The list of channels to connect"}
+                         "description": "The list of channels to connect"},
+            "msg_template": {
+                "type": "string",
+                "description": "Format message before forwarding. The "
+                               "following keys can be used: client_id, "
+                               "author, msg."
+            }
         },
         "additionalProperties": False,
         "required": ["token"]

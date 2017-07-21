@@ -143,11 +143,6 @@ RULE_SCHEMA = {
         "regexp": {
             "type": "string",
             "description": "Forward only specific messages."
-        },
-        "msg_template": {
-            "type": "string",
-            "description": "Format message before forwarding. The following "
-                           "keys can be used: client_id, author, msg."
         }
     },
     "additionalProperties": False,

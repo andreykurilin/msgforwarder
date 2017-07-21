@@ -15,6 +15,8 @@ class BaseTransport(object):
     def __init__(self, client_id, client_cfg):
         self._client_id = client_id
         self._client_cfg = client_cfg
+        self._msg_template = self._client_cfg.get("msg_template",
+                                                  self.MSG_TEMPLATE)
 
     @classmethod
     def validate(cls, cfg):
@@ -28,7 +30,7 @@ class BaseTransport(object):
         raise NotImplementedError
 
     def say(self, author, from_client, from_target, target, msg):
-        msg = self.MSG_TEMPLATE % {
+        msg = self._msg_template % {
             "author": author,
             "from_client": from_client,
             "from_target": from_target,
