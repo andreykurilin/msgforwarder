@@ -1,8 +1,6 @@
 import asyncio
 import aiohttp
 
-import json
-
 from msgforwarder import logger
 from msgforwarder.transports import transport
 
@@ -11,7 +9,7 @@ loop = asyncio.get_event_loop()
 
 class TelegramClient(transport.BaseTransport):
     NAME = "telegram"
-    MSG_TEMPLATE = "*[From %(from_client)s]* **%(author)s** : %(msg)s"
+    MSG_TEMPLATE = "_[From %(from_client)s]_ *%(author)s* : %(msg)s"
     CLIENT_SCHEMA = {
         "type": "object",
         "properties": {
@@ -92,9 +90,9 @@ class TelegramClient(transport.BaseTransport):
                         channel_id = message["chat"]["id"]
                         if channel_name not in self._channels:
                             self._channels[channel_name] = channel_id
-                            logger.info("THE NEW CHANNEL DETECTED: "
-                                        "ID=%s; Name=%s" % (channel_id,
-                                                            channel_name))
+                        logger.info("THE NEW CHANNEL DETECTED: "
+                                    "ID=%s; Name=%s" % (channel_id,
+                                                        channel_name))
                         author = message.get("from", {})
                         if "username" in author:
                             author = author["username"]
@@ -128,13 +126,11 @@ class TelegramClient(transport.BaseTransport):
         async with aiohttp.ClientSession(loop=loop) as session:
             with aiohttp.Timeout(10, loop=session.loop):
                 url = self._make_url("sendMessage")
-                print(url)
                 data = {
                     "parse_mode": "Markdown",
                     "text": msg,
                     "chat_id": self._channels[channel]
                 }
-                print(data)
                 async with session.get(url, data=data) as response:
                     result = await response.json()
                     if not result["ok"]:
