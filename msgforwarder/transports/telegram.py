@@ -55,19 +55,6 @@ class TelegramClient(transport.BaseTransport):
         logger.info("[%s] Connecting..." % self._client_id)
         asyncio.get_event_loop().create_task(self._connect())
 
-    async def _make_request(self, url, session, method="GET", data=None):
-        """Make simple API request to the Gitter host.
-
-        :param url: a part of url which will be added to Gitter API url
-        :param session: a Session object
-        :param method: a method of request (GET by default)
-        :param data: a dict to attach to request as data
-        """
-        url = "%s/%s" % (self.BASE_URL, url)
-        with aiohttp.Timeout(10, loop=session.loop):
-            async with session.request(method, url, data=data) as response:
-                return await response.json()
-
     async def _listen_for_update(self):
         offset = None
         while True:

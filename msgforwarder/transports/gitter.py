@@ -39,7 +39,6 @@ class GitterClient(transport.BaseTransport):
     }
 
     BASE_URL = "https://api.gitter.im/v1"
-    STREAM_URL = "https://stream.gitter.im/v1/rooms/%(room_id)s/chatMessages"
 
     def __init__(self, client_id, client_cfg):
         super(GitterClient, self).__init__(client_id, client_cfg)
@@ -82,19 +81,22 @@ class GitterClient(transport.BaseTransport):
         :param room_name: name of the room to listen messages from.
         """
         room_id = self._rooms[room_name]
+        offset = None
         while True:
-            async with aiohttp.ClientSession(headers=self._headers,
-                                             loop=loop) as session:
-                async with session.get(self.STREAM_URL %
-                                       {"room_id": room_id}) as resp:
-                    raw_data = await resp.content.readline()
-                    if not raw_data:
-                        continue
-                    try:
-                        message = json.loads(raw_data.decode("utf-8"))
-                    except json.JSONDecodeError:
-                        continue
+            async with aiohttp.ClientSession(loop=loop) as session:
+                url = "rooms/%s/chatMessages" % room_id
+                if offset:
+                    url += ("?afterId=%s" % offset)
 
+                result = await self._make_request(url, session, method="GET")
+                if "error" in result:
+                    logger.error("[%s] Failed to retrieve messages: %s" %
+                                 (self._client_id, result["error"]))
+
+                if offset is None:
+                    offset = result[-1]["id"]
+                    continue
+                for message in result:
                     author = message.get("fromUser", {})
                     author = author.get("username", "")
                     if author == self._user["username"]:
@@ -103,6 +105,8 @@ class GitterClient(transport.BaseTransport):
                     text = message.get("text")
                     self._forward_message(user=author, target=room_name,
                                           text=text)
+
+                await asyncio.sleep(0.5)
 
     def connect(self):
         logger.info("[%s] Connecting..." % self._client_id)
