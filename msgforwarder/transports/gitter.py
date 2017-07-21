@@ -80,17 +80,16 @@ class GitterClient(transport.BaseTransport):
         """Start listening a messages of the specific room.
         
         :param room_name: name of the room to listen messages from.
-        :param session: a Session object.
         """
         room_id = self._rooms[room_name]
-        async with aiohttp.ClientSession(headers=self._headers,
-                                         loop=loop) as session:
-            async with session.get(
-                            self.STREAM_URL % {"room_id": room_id}) as resp:
-                while True:
+        while True:
+            async with aiohttp.ClientSession(headers=self._headers,
+                                             loop=loop) as session:
+                async with session.get(self.STREAM_URL %
+                                       {"room_id": room_id}) as resp:
                     raw_data = await resp.content.readline()
                     if not raw_data:
-                        break
+                        continue
                     try:
                         message = json.loads(raw_data.decode("utf-8"))
                     except json.JSONDecodeError:
