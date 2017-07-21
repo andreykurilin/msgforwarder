@@ -83,7 +83,8 @@ class GitterClient(transport.BaseTransport):
         room_id = self._rooms[room_name]
         offset = None
         while True:
-            async with aiohttp.ClientSession(loop=loop) as session:
+            async with aiohttp.ClientSession(loop=loop,
+                                             headers=self._headers) as session:
                 url = "rooms/%s/chatMessages" % room_id
                 if offset:
                     url += ("?afterId=%s" % offset)
@@ -92,11 +93,16 @@ class GitterClient(transport.BaseTransport):
                 if "error" in result:
                     logger.error("[%s] Failed to retrieve messages: %s" %
                                  (self._client_id, result["error"]))
+                    continue
 
                 if offset is None:
+
                     offset = result[-1]["id"]
                     continue
-                for message in result:
+                for i, message in enumerate(result):
+                    if i == 0:
+                        # the first message in the result is our offset
+                        continue
                     author = message.get("fromUser", {})
                     author = author.get("username", "")
                     if author == self._user["username"]:
@@ -106,7 +112,7 @@ class GitterClient(transport.BaseTransport):
                     self._forward_message(user=author, target=room_name,
                                           text=text)
 
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1)
 
     def connect(self):
         logger.info("[%s] Connecting..." % self._client_id)
