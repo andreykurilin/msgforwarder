@@ -39,6 +39,7 @@ class GitterClient(transport.BaseTransport):
     }
 
     BASE_URL = "https://api.gitter.im/v1"
+    STREAM_URL = "https://stream.gitter.im/v1/rooms/%(room_id)s/chatMessages"
 
     def __init__(self, client_id, client_cfg):
         super(GitterClient, self).__init__(client_id, client_cfg)
@@ -81,36 +82,26 @@ class GitterClient(transport.BaseTransport):
         :param room_name: name of the room to listen messages from.
         """
         room_id = self._rooms[room_name]
-        offset = None
         while True:
             async with aiohttp.ClientSession(loop=loop,
                                              headers=self._headers) as session:
-                url = "rooms/%s/chatMessages" % room_id
-                if offset:
-                    url += ("?afterId=%s" % offset)
-
-                result = await self._make_request(url, session, method="GET")
-                if "error" in result:
-                    logger.error("[%s] Failed to retrieve messages: %s" %
-                                 (self._client_id, result["error"]))
-                    if "Too Many Requests" in result["error"]:
-                        # let's sleep a bit
-                        await asyncio.sleep(1.5)
-                    continue
-
-                if offset is None:
-                    offset = result[-1]["id"]
-                    continue
-                for message in result:
-                    offset = message["id"]
-                    author = message.get("fromUser", {})
-                    author = author.get("username", "")
-                    if author == self._user["username"]:
-                        # do not forward self-messages
-                        continue
-                    text = message.get("text")
-                    self._forward_message(user=author, target=room_name,
-                                          text=text)
+                async with session.get(self.STREAM_URL % {"room_id": room_id},
+                                       timeout=None) as resp:
+                    async for raw_data in resp.content:
+                        if not raw_data:
+                            continue
+                        try:
+                            message = json.loads(raw_data.decode("utf-8"))
+                        except json.JSONDecodeError:
+                            continue
+                        author = message.get("fromUser", {})
+                        author = author.get("username", "")
+                        if author == self._user["username"]:
+                            # do not forward self-messages
+                            continue
+                        text = message.get("text")
+                        self._forward_message(user=author, target=room_name,
+                                              text=text)
 
                 await asyncio.sleep(0.5)
 
